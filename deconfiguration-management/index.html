@@ -1,0 +1,615 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Deconfiguration Management</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css">
+		<style>
+			section {
+				text-align: left;
+			}
+			.red {
+				color: red;
+			}
+
+			.green {
+				color: green;
+			}
+
+			#ral-diffs p {
+				padding: 1em 0;
+			}
+
+			.reveal pre {
+				margin-left: 0;
+			}
+
+			#dependency-aware p {
+				line-height: 200%
+			}
+
+			code {
+				color: orange;
+			}
+		</style>
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section id="title">
+					<h1>Deconfiguration Management</h1>
+					<h3>making Puppet clean up its own mess</h3>
+					<h4 style="margin-top: 3em">Josh Snyder</h4>
+					<aside class="notes">
+						I'm Josh. I worked at Yelp for a while, on a bunch of stuff. Lots of
+						databases. I also worked at a company Yelp acquired called Eat24.
+
+						Eat24 was super fast paced. We did a lot of work there very quickly, which
+						provides some background for why it was important that we had good tools to
+						ensure we iterated safely.
+					</aside>
+				</section>
+				<section>
+					<section id="problem">
+						<h2>What's the problem?</h2>
+						<ul>
+							<li>We use Puppet</li>
+							<li>We change things</li>
+						</ul>
+					</section>
+					<section id="fast">
+							<ul>
+								<li>I have been known to deploy 20 times daily</li>
+								<li>And Puppet runs every 30 minutes</li>
+							</ul>
+					</section>
+					<section id="mistakes">
+						<ul>
+							<li>That thing you deployed in a hurry isn't always in the place it should be long term.</li>
+							<li>Or...we deploy a thing, and decide next week (or tomorrow) that it isn't right for us</li>
+							<!-- This logging framework just isn't for us -->
+							<li>Or we just straight-up make mistakes</li>
+							<li class="fragment">Or our coworkers make mistakes</li>
+						</ul>
+					</section>
+					<section id="coworkers">
+						<p>My colleague sends me a PR to deploy memcached config files under a new
+						path. Should I comment on their failure to clean up the old ones?</p> <h3
+							class="fragment">Yes!</h3>
+					</section>
+					<section id="colleagues-but">
+						<ul>
+							<li>But they're busy</li>
+							<li>But I'm busy</li>
+							<li>And I really want to get home to make dinner</li>
+						</ul>
+					</section>
+				</section>
+				<section>
+						<section id="options">
+							<h2>What are our options?</h2>
+						</section>
+						<section id="ignore-bad">
+							<h3>Ignore the problem</h3>
+							<ul>
+								<li>Ignore it! It probably won't hurt anything</li>
+								<!-- Let's say you move a memcached config file. You're going to run multiple instances of memcached now. -->
+								<li class="fragment">Except it will confuse people.</li>
+								<!-- Like your green newhire who sees a config file that's 6 months old -->
+								<li class="fragment">It WILL confuse you, at two AM</li>
+								<li class="fragment">JVM versions will exist on some older dev
+									machines, but not newer ones</li>
+							</ul>
+						</section>
+						<section id="more-code">
+							<h3>Write code to clean up after other code</h3>
+							<pre><code class="puppet">file { '/etc/memcached.conf':
+    ensure =&gt; absent,
+}</code></pre>
+						</section>
+						<section id="complex">
+							<h3>Ensembles of resources get complex</h3>
+							<pre><code class="puppet">if $ensure == 'present' {
+  file { '/etc/init/memcached.conf':
+    ensure =&gt; 'file',
+    ...
+  }
+} else {
+  file { '/etc/init/memcached.conf':
+    ensure =&gt; 'absent',
+    ...
+  } 
+}</code></pre>
+						</section>
+						<section id="more-code-bad">
+							<h3>No fun at all</h3>
+							<ul>
+								<li>more code to write</li>
+								<li>more code to review</li>
+								<li>someone has to clean up the cleanup code</li>
+							</ul>
+						</section>
+						<section id="different-language">
+							<h3>Write more code (in a different language)</h3>
+							<ul>
+								<li>Use Ansible clean up after Puppet?</li>
+							</ul>
+						</section>
+						<section id="rebuild-good">
+							<h3>Rebuild machines</h3>
+							<ul>
+								<li>Good! Cattle, not pets</li>
+								<li>I'm deploying new changes every <span class="green">30 minutes</span></li>
+								<li>We only clean things up every day?<br /><span class="red">30 days? 60 days? Five years?</span></li>
+								<li class="fragment">&exist; an impedance and tooling mismatch</li>
+							</ul>
+						</section>
+						<section id="immutable">
+							<h3>Immutable images</h3>
+							<p>A more aggressive version of rebuilding machines</p>
+							<p>Use if it suits you</p>
+						</section>
+				</section>
+				<section id="solution">
+					<h3>the solution (to all your problems)</h3>
+					<ol>
+						<li>Use Puppet to specify what should be deployed</li>
+						<li>Allow Puppet to remove anything it doesn't know about</li>
+						<!-- At this point you should be saying "thanks for stating the obvious, Josh" -->
+					</ol>
+				</section>
+				<section id="outline">
+					<h3>What's to come?</h3>
+					<ul>
+						<li>A few easy examples (directory purging, cronjobs, hosts)</li>
+						<li>A bit of Puppet internals</li>
+						<li>Use Puppet internals to achieve more purging</li>
+					</ul>
+				</section>
+				<section>
+					<section id="batteries-included">
+						<h2>Batteries Are Included</h2>
+					</section>
+					<section id="directory-purging">
+						<h3>directory purging</h3>
+<pre><code class="puppet">file { '/etc/cassandra':
+  ensure  =&gt; 'directory',
+  recurse =&gt; true,
+  purge   =&gt; true,
+  force   =&gt; true,
+}</code></pre>
+					</section>
+					<section id="observability" style="text-align: left">
+						<h3>What will this do?</h3>
+						<ul>
+							<li>Use <code>puppet agent --noop</code></li>
+							<li>Or add &nbsp;<code>noop =&gt; true</code></li>
+							<li>Look at the system:</li>
+						</ul>
+<pre><code>$ ls /etc/cassandra
+...
+$ dpkg -S /etc/cassandra
+...
+</code></pre>
+						<aside class="notes">
+						This works pretty nicely for a lot of things. When doing code reviews, look for
+						this. Ask people if they can enable directory purging when they start managing a new directory.
+						</aside>
+					</section>
+					<section id="partial">
+						<h3>Example 1: Partial management</h3>
+						<p style="margin-top: 1em"><strong>Situation: </strong>We want to purge <code>/etc/cassandra</code>, but we need to generate the
+						list of seeds outside of Puppet</p>
+<pre><code class="puppet">file { '/etc/cassandra':
+  ensure  =&gt; directory,
+  recurse =&gt; true,
+  purge   =&gt; true,
+  force   =&gt; true,
+  ...
+}
+file { '/etc/cassandra/seeds':
+  ensure  =&gt; file,
+  replace =&gt; false,
+  ...
+}</code></pre>
+						<aside class="notes">
+							It's also totally acceptable to separate directories into the Puppet
+							ones, which are purged, and the ones generated by other processes, which
+							are unpurged.
+						</aside>
+					</section>
+					<section id="crons">
+						<h3>Example 2: cronjobs</h3>
+						<ul>
+							<li>Lots of cronjobs</li>
+							<li>Lots of cronjobs!</li>
+							<li>Using Yelp's <a href="https://github.com/Yelp/puppet-cron">puppet-cron</a></li>
+							<li>One file per job in /etc/cron.d</li>
+						</ul>
+						<aside class="notes">
+							File per cron avoids the need to parse a crontab file like the Puppet
+							native type does.  Plus it allows us to add a bunch of value-added
+							features.
+
+							Having an old cronjob lying around is really painful.
+						</aside>
+					</section>
+					<section id="crons-probems">
+						<h3>Purging cronjobs</h3>
+						<div style="display: flex; flex-direction: row">
+							<p style="margin-right: 1em; font-weight: bold">Problem:<br /></p>
+							<p><code>purge =&gt; true</code> would wipe out crons provided by Debian
+							packages.</p>
+						</div>
+					</section>
+					<section id="crons-solutions">
+						<table>
+							<thead>
+								<td>Option</td>
+								<td>Implications</td>
+							</thead>
+							<tr>
+								<td>Recompile cron to read from a supplemental directory</td>
+								<td>Anyone else using <a
+										href="https://github.com/Yelp/puppet-cron">puppet-cron</a>
+										would have to use our patched cron</td>
+							</tr>
+							<tr>
+								<td>Create <code>File</code> resources for each file we expect a
+									from a deb.</td> <td>Whenever someone installs a package with a
+									new cronjob in it, they'd
+									get a nasty surprise</td>
+						</tr>
+							<tr>
+								<td>Find some way to identify those cronjobs that were originally
+								created by Puppet</td>
+								<td class="green">Good</td>
+							</tr>
+							<aside class="notes">
+								Finding a way to identify those things which Puppet originally
+								created will be a recurring theme of the talk
+							</aside>
+						</table>
+					</section>
+					<section id="cron-implemented">
+						<p>What this solution ends up looking like: (ish)</p>
+<pre><code class="puppet">file { '/nail/etc/cron.d':
+  ensure =&gt; directory,
+  purge  =&gt; true,
+  force  =&gt; true,
+  limit  =&gt; true,
+ }
+
+file { '/nail/etc/cron.d/myjob':
+  ensure =&gt; file,
+  ...
+} ->
+file { '/etc/cron.d/myjob':
+  ensure =&gt; link,
+  target =&gt; '/nail/etc/cron.d/myjob',
+}
+</code></pre>
+					<p><a
+						href="https://github.com/Yelp/puppet-cron">github.com/Yelp/puppet-cron</a></p>
+				</section>
+				<section id="hosts">
+					<h3>Example 3: <code>/etc/hosts</code></h3>
+					<div style="display: flex; flex-direction: row; text-align: left">
+						<div>
+							<li>Puppet agent has a RAL (resource abstraction layer)</li>
+							<li>RAL is responsible for representing resources on the system as Puppet
+								Resource objects</li>
+						</div>
+						<div style="margin-left: 2em;">
+<pre><code class="puppet" style="min-width: max-content; overflow-x: none; padding: 1em 2em 0em 1em">$ puppet resource host
+host { 'ip6-allnodes':
+  ensure =&gt; 'present',
+  ip     =&gt; 'ff02::1',
+  target =&gt; '/etc/hosts',
+}
+host { 'ip6-allrouters':
+  ensure =&gt; 'present',
+  ip     =&gt; 'ff02::2',
+  target =&gt; '/etc/hosts',
+}
+host { 'localhost':
+  ensure =&gt; 'present',
+  ip     =&gt; '127.0.0.1',
+  target =&gt; '/etc/hosts',
+}
+host { 'steampunk':
+  ensure =&gt; 'present',
+  ip     =&gt; '127.0.1.1',
+  target =&gt; '/etc/hosts',
+}
+</code></pre>
+						</div>
+					</div>
+				</section>
+				<section id="ral-diffs">
+					<p>Puppet diffs resources present on the host with the RAL it constructs</p>
+					<p class="fragment">Could we ask it remove resources present in the RAL but not in the catalog?</p>
+					<h3 class="fragment" style="color: green">Yes!</h4>
+				</section>
+				<section id="simple">
+					<h3>It's this simple</h3>
+<pre><code class="puppet">resources { 'host':
+  purge =&gt; true,
+}
+</code></pre>
+					<ul>
+						<li>Use <code>noop =&gt; true</code> to try before you buy</li>
+					</ul>
+				</section>
+				<section id="how-it-works">
+					<h3>How it works</h3>
+					<ul>
+						<li>All on the agent, after catalog compilation</li>
+						<aside class="notes">
+							So the Puppet server is DONE. It has made the catalog and gone on to
+							other things.
+						</aside>
+						<li>Iterate over resources, calling the
+							<code>generate</code> or <code>eval_generate</code> method on each.</li>
+						<li>Each resource has the opportunity to add more resources to the
+							Puppet run.</li>
+					</ul>
+				</section>
+				<section id="fileserver-example">
+					<p>Walkthrough: fetching files from a fileserver</p>
+<pre><code class="puppet">file { '/etc/cassandra':
+  ensure  =&gt; directory,
+  source  =&gt; 'puppet:///modules/cassandra/config_dir',
+  recurse =&gt; true,
+  purge   =&gt; true,
+  force   =&gt; true,
+}
+</code></pre>
+					<ol>
+						<li>Get catalog with this resource declared</li>
+						<li>Puppet agent calls <code>eval_generate</code> on this resource</li>
+						<li><code>eval_generate</code> examines the disk, compares it with the Puppet
+							fileserver</li>
+						<li>Generates more resources to represent the files beneath this
+							directory</li>
+					</ol>
+				</section>
+				<section id="how-resources-works">
+					<h3>How the <code>resources</code> type works</h3>
+<pre><code class="puppet">resources { 'host':
+  purge =&gt; true,
+}
+</code></pre>
+					<ol>
+						<li>Puppet calls <code>generate</code></li>
+						<li>Generate finds all resources of type <code>Host</code> in the
+							catalog</li>
+						<li>Asks providers of <code>Host</code> for their
+							<code>instances</code>
+						<li>Compare the two</li>
+						<li>Emit new resources:</li>
+					</ol>
+<pre><code class="puppet">host { 'ip6-allnodes':
+  ensure =&gt; absent,
+}
+</code></pre>
+			</section>
+		</section>
+			<section id="special-topics">
+				<section id="beyond">
+					<h2>Moving beyond the builtins</h2>
+					<aside class="notes">
+					If you fell asleep before, now's your chance to wake up.
+					This stuff hasn't been presented publicly before.
+					</aside>
+				</section>
+				<section id="debian-packages">
+					<h3>Purging undesired debian packages</h3>
+					<aside class="notes">
+						Let's now consider the example of the dev machine with the undesired java
+						version.
+
+						Or the production app server that happens to have gdb on it for some reason.
+					</aside>
+					<p>Let's say I do:</p>
+<pre><code class="puppet">resources { 'package':
+  purge =&gt; true,
+}</pre></code>
+					<p>This happens:</p>
+<pre><code style="overflow: scroll; max-height: 12em">Notice: /Stage[main]/Main/Package[libxtst6]/ensure: current_value 2:1.2.2-1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libxcb-dri3-0]/ensure: current_value 1.11.1-1ubuntu1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[powermgmt-base]/ensure: current_value 1.31+nmu1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[python3-py]/ensure: current_value 1.4.31-1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libtk8.6]/ensure: current_value 8.6.5-1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[node-ansi-color-table]/ensure: current_value 1.0.0-1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libxpp3-java]/ensure: current_value 1.1.4c-2build1, should be absent (noop)
+Notice: /Stage[main]/Main/Package[python3-newt]/ensure: current_value 0.52.18-1ubuntu2, should be absent (noop)
+Notice: /Stage[main]/Main/Package[bsdmainutils]/ensure: current_value 9.0.6ubuntu3, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libpulse0]/ensure: current_value 1:8.0-0ubuntu3, should be absent (noop)
+Notice: /Stage[main]/Main/Package[liblvm2app2.2]/ensure: current_value 2.02.133-1ubuntu10, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libarchive-zip-perl]/ensure: current_value 1.56-2, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libsystemd0]/ensure: current_value 229-4ubuntu10, should be absent (noop)
+Notice: /Stage[main]/Main/Package[libpython2.7-dbg]/ensure: current_value 2.7.12-1~16.04, should be absent (noop)
+...</code></pre>
+				</section>
+				<section id="no-bueno">
+					<h3>No bueno</h3>
+					<p>Why doesn't puppet understand that it should remove all packages that:</p>
+					<ul>
+						<li>aren't in the catalog</li>
+						<li>no other package depends on</li>
+					</ul>
+				</section>
+				<section id="dependency-aware">
+					<p style="font-size: larger">We need to be dependency-aware</p>
+					<p class="fragment">What removes packages and is dependency aware?</p>
+					<p class="fragment"><code>apt-get autoremove</code></p>
+				</section>
+				<section id="autoremove-architecture">
+					<h3>apt-get autoremove</h3>
+					<p>
+					Divides packages into:
+					</p>
+					<ul>
+						<li>manually installed (we're sure we want this)</li>
+						<li>auto installed (a dependency)</li>
+					</ul>
+				</section>
+				<section id="autoremove-mapping">
+					<h3>this maps well to Puppet</h3>
+					<table style="width: 100%">
+						<thead style="font-weight: bold">
+							<td>puppet state</td>
+							<td>⇒ </td>
+							<td>autoremover state</td>
+						</thead>
+						<tbody>
+							<tr>
+								<td>in catalog</td>
+								<td></td>
+								<td>manually installed</td>
+							</tr>
+							<tr>
+								<td>not in catalog</td>
+								<td></td>
+								<td>automatically installed</td>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+				<section id="autoremove-implementation">
+					<h3>An implementation comes together</h3>
+					<ol>
+						<li>Synchronize the autoremover database with the Puppet catalog</li>
+						<li>Run <code>apt-get autoremove</code></li>
+						<li>Problem?</li>
+					</ol>
+					<aside class="notes">
+						It will do what we want, but it will provide no feedback, no auditing, no affordances to the user.
+
+						Initial implementation went undeployed, because it was an out-of-band script that does the above.
+					</aside>
+				</section>
+				<section id="autoremove-implementation-deux">
+					<h3>An implementation comes together (parte duex)</h3>
+					<ol>
+						<li>Synchronize the autoremover database with the Puppet catalog</li>
+						<li>Run <code>apt-get <strong class="red">-s</strong> autoremove</code></li>
+						<li>Read the output and create Puppet package resources</li>
+						<li class="fragment">Much rejoicing!</li>
+					</ol>
+					<p>
+					<a style="font-size: larger; line-height: 3em;" href="https://github.com/hashbrowncipher/puppet-package_purging">github.com/hashbrowncipher/puppet-package_purging</a>
+					</p>
+					<aside class="notes">
+						Now the user can see what will happen in a noop run. Quite useful.
+						Downside: we do make changes to the autoremover database of auto/manual in noop mode.
+						So we shouldn't go arbitrarily running apt-get autoremove.
+
+						This implementation was deployed at Eat24.
+					</aside>
+				</section>
+				<section id="general-purpose">
+					<h3>General purpose solutions?</h3>
+					<aside class="notes">
+						So this was all super fiddly. We had to write our own native Puppet type,
+						and it does all sorts of stuff with apt. More work than is worth doing,
+						unless you're motivated.
+					</aside>
+					<p>Could there be a jack-of-all-trades solution to purging?</p>
+					<div class="fragment">What if we could do:
+<pre><code>purge { 'user':
+ unless =&gt; [ 'uid', '&lt;=', '500' ],
+}</code></pre>
+					</div>
+					<p class="fragment" style="line-height: 2em; font-size: larger">It exists: <a
+						href="https://github.com/crayfishx/puppet-purge">github.com/crayfishx/puppet-purge</a>
+					</p>
+					<aside class="notes">
+						Unfortunately I haven't had a chance to use this in production myself.
+						But it can support predicates on any property of a resource. Fun!
+					</aside>
+				</section>
+			</section>
+			<section>
+				<section id="bonus">
+					<h2>Bonus fun stuff</h2>
+				</section>
+				<section id="versiondrift">
+					<h3>Not my favorite default</h3>
+					<p>Q: What does this do?</p>
+<pre><code class="puppet">package { 'mysql-server-5.7': }
+package { 'bash': }</code></pre>
+					<p>A: Creates version drift</p>
+					<aside class="notes">
+						This pattern is everywhere, and it's awful. If only there was a way to
+						upgrade all packages that don't have a specific version specified.
+					</aside>
+				</section>
+				<section id="upgrade-some">
+					<h3>Upgrade (some of the) things</h3>
+					<aside class="notes">
+						So the administrator decides that they'll want to do in depth testing on
+						MySQL before upgrades. But they don't have any testing to do on bash, so
+						they want to just upgrade at their OS's cadence.
+					</aside>
+<pre><code class="puppet">package { 'mysql-server-5.7':
+  ensure =&gt; $my_favorite_mysql_version
+}
+package { 'bash': }</code></pre>
+					<ul>
+						<li><code>aptly_purge</code> can set all versioned packages as held by
+							dpkg</li>
+						<li>Upshot: <code>apt-get dist-upgrade</code> and
+						<code>unattended-upgrades</code> will only touch packages without a
+						specific Puppet version specified.</li>
+						<aside class="notes">
+							So be sure to think broadly about what you can achieve by introspecting
+							the Puppet catalog. It's not just purging
+						</aside>
+					</ul>
+			</section>
+			<section id="endmatter">
+				<h3>End matter</h3>
+				<p>Please do tell me your stories of Puppet resource purging.</p>
+				<p>Walk up and say hi right now.</p>
+				<p>Or <a href="mailto:josh@code406.com">josh@code406.com</a> works too</p>
+			</section>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				width: 1200,
+				history: true,
+
+				// More info https://github.com/hakimel/reveal.js#dependencies
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
