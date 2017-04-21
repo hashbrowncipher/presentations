@@ -686,14 +686,20 @@ good $ strace -qq -e clock_gettime date > /dev/null</code></pre>
 				</section>
 				<section>
 					<h3>Bad load balancing</h3>
-					<li>random</li>
-					<li>round-robin (slightly better)</li>
+					<ul>
+						<li>random</li>
+						<li>round-robin (slightly better)</li>
+					</ul>
+					</br>
+					<img src="assets/arrivals.png" style="margin-top: 2em">
 				</section>
 				<section>
 					<h3>Better load balancing</h3>
-					<li>join-shortest-queue</li>
-					<li>least-work-left</li>
-					<li>TAGS (for "practical" workloads)</li>
+					<ul>
+						<li>join-shortest-queue</li>
+						<li>least-work-left</li>
+						<li>TAGS (for "practical" workloads)</li>
+					</ul>
 				</section>
 				<section>
 					<h3>TAGS (prepare your mind)</h3>
