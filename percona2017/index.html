@@ -1,0 +1,760 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Queues your query waits in</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/solarized.css">
+		<style>
+			section {
+				text-align: left;
+				height: 100%;
+				padding-top: 2em !important;
+			}
+
+			section.centered {
+				height: inherit;
+			}
+
+			.mono {
+				font-family: monospace !important;
+			}
+
+			.green {
+				color: green;
+			}
+
+			.red {
+				color: red;
+			}
+
+			.indent {
+				margin-left: 2em !important;
+			}
+
+			pre {
+				margin: 0 !important;
+			}
+
+			table {
+				margin-left: 0 !important;
+			}
+
+			table td {
+				vertical-align: top !important;
+			}
+
+			.links {
+				margin-top: 2em !important;
+				font-size: 15px !important;
+			}
+
+			.author {
+				text-align: right;
+			}
+
+			.hide {
+				display: none !important;
+			}
+
+			.small {
+				font-size: smaller;
+			}
+		</style>
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+					<h1>Queues your query waits in</h1>
+					<h3 class="author">Josh Snyder</h3>
+				</section>
+				<section>
+					<h1>So much queuing<br />so little time</h1>
+					<h3 class="author">Josh Snyder</h3>
+					<aside class="notes">
+						Expertise in MySQL in Cassandra
+					</aside>
+				</section>
+				<section>
+				<section id="escalators">
+					<h2>Escalator Etiquette</h2>
+					<img src="assets/tflsign.jpg">
+                </section>
+				<section id="escalators2">
+					<h2>Escalating Upheaval</h2>
+					<div>
+						<img src="assets/guardian.jpg">
+						<ul>
+							<li>Why would they do such a thing?</li>
+						</ul>
+					</div>
+				</section>
+				<section id="latency_throughput">
+					<table>
+						<tr>
+							<td></td>
+							<td>Latency</td>
+							<td>Throughput</td>
+						</tr>
+						<tr>
+							<td>units</td>
+							<td>time</td>
+							<td>time<sup>-1</sup></td>
+						<tr>
+							<td>measures</td>
+							<td>smallest sliver of work</td>
+							<td>largest sample of work</td>
+						</tr>
+						<tr>
+							<td></td>
+							<td>lim n → 1</td>
+							<td>lim n → &infin;</td>
+						</tr>
+					</table>
+				</section>
+				<section id="escalator_analysis">
+					<h3>Hypothetical Escalator Analysis</h3>
+					<ul class="smaller">
+						<li>Person standing requires 1 stair; 24 seconds</li>
+						<li>So: 24 stair-seconds</li>
+						<li>Person walking requires 12 seconds</li>
+						<li>To break even, walkers must be spaced &le;2 stairs apart</li>
+					</ul>
+					<div class="links">
+						<a href="http://www.gizmodo.co.uk/2017/03/the-results-are-in-the-holborn-escalator-trial-proves-that-it-is-better-to-stand-on-the-escalator-well-sometimes/">http://www.gizmodo.co.uk/2017/03/the-results-are-in-the-holborn-escalator-trial-proves-that-it-is-better-to-stand-on-the-escalator-well-sometimes/</a>
+					</div>
+				</section>
+				</section>
+				<section id="toc">
+					<h3>What's to come</h3>
+					<ul>
+						<li>two "favorite" tools: iostat and loadavg</li>
+						<li>layers and layers of latency</li>
+						<li>managing multi-tenancy</li>
+						<li>load (un)balancing</li>
+					</ul>
+				</section>
+				<section>
+				<section id="iostat">
+					<h3>iostat</h3>
+						<ul>
+							<li>Presents disk I/O <em>statistics</em>
+							<li>Reads /proc/diskstats (Linux)</li>
+						</ul>
+					</h3>
+				</section>
+				<section id="iostat_worked">
+					<h3>iostat: an example</h3>
+					<table style="font-family: monospace; font-size: 22pt">
+						<tr>
+							<td></td>
+							<td>reads</td>
+							<td>r_sects</td>
+							<td>r_ms</td>
+							<td>t_act</td>
+						</tr>
+						<tr>
+							<td>t=0</td>
+							<td>459583</td>
+							<td>96210660</td>
+							<td>2693900</td>
+							<td>599164</td>
+						</tr>
+						<tr>
+							<td>t=10</td>
+							<td>476346</td>
+							<td>100180364</td>
+							<td>2741888</td>
+							<td>608628</td>
+						</tr>
+						<tr class="fragment">
+							<td>&Delta;</td>
+							<td>16763</td>
+							<td>3969704</td>
+							<td>47988</td>
+							<td>9464</td>
+						</tr>
+						<tr class="fragment">
+							<td>/ 10</td>
+							<td>1676.3</td>
+							<td>396970.4</td>
+							<td>4798.8</td>
+							<td>946.4</td>
+						</tr>
+						<tr class="fragment">
+							<td>human</td>
+							<td class="green">1676.3 / second</td>
+							<td class="green">190.83 MB/s</td>
+							<td class="green">4.7988</td>
+							<td class="green">.9464</td>
+						</tr>
+						<aside class="notes">
+							4.7988 is avgqu-sz
+							94.64% is util%
+						</aside>
+					</table>
+				</section>
+				<section id="await">
+					r_await: average time each I/O waited<br />
+					<div class="indent">
+						4798.8 ms spent<br />
+						1676.3 reads<br />
+						4798.8 / 1676.3 → <span class="green">2.86 ms / op</span>
+					</div>
+				</section>
+				<section>
+					avgrq-sz: mean sectors per I/O
+					<div class="indent">
+						396970.4 sectors<br />
+						1676.3 reads<br />
+						396970.4 / 1676.3 → <span class="green">236.81 sectors / op</span>
+					</div>
+				</section>
+				<section>
+					svctm: non-idle time (%util) / #OPS
+					<div class="indent">
+						946.4 ms / second (94.6 %util)<br />
+						1676.3 reads<br />
+						946.4 / 1676.3 → <span class="green">0.56 ms / OP</span>
+					</div>
+				</section>
+				<section>
+					<pre>Device: r/s   rMB/s avgrq-sz avgqu-sz r_await svctm %util
+vda     1676 190.83   236.81     4.80    2.86  0.56 94.64</pre>
+				</section>
+				<section>
+					<h3>Load average</h3>
+					<ul>
+						<li>Collected by the scheduler</li>
+						<li>Based on process states</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Process states</h3>
+					A process/thread/task is either:<br />
+					<div style="font-size: smaller; padding-left: 1em;">
+					<ul>
+						<li>runnable</li>
+						<ul>
+							<li>on a CPU</li>
+							<li>starved of CPU</li>
+						</ul>
+						<li>waiting for something</li>
+					</ul>
+					</div>
+				</section>
+				<section>
+					<h3>Being runnable</h3>
+<pre><code>int i = 0;
+while(1) {
+  i++;
+}</code></pre>
+				</section>
+				<section>
+					<h3>CPU Starvation</h3>
+					Possible reasons:
+					<ul>
+						<li>no CPU is available</li>
+						<li>task is (temporarily) assigned to a CPU with other work to do</li>
+						<li>a bug in the scheduler (see "A Decade of Wasted Cores")</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Measuring CPU Starvation</h3>
+<pre>$ awk '/^cpu/ { printf "%s %.9fs\n", $1, $9 / 1e9 }' /proc/schedstat
+cpu0 508.505281125s
+cpu1 186.946423306s
+
+$ awk '{ printf "%.9fs\n", $2 / 1e9 }' /proc/$PID/schedstat
+3.181567463s</pre>
+				<p class="links">
+				Formats documented in Documentation/scheduler/sched-stats.txt
+				</p>
+				</section>
+				<section>
+					<img src="assets/rq_latency.png">
+				</section>
+				<section>
+					<img src="assets/greggbook.jpg" height="500" style="float: left">
+					<ul style="padding-left: 20px; padding-top: 20px; width: 40%">
+						<li>Resource-by-resource analysis</li>
+						<li>USE method</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Waiting voluntarily</h3>
+					<table>
+						<tr><td>accept()</td><td>a new network connection</td></tr>
+						<tr><td>recv()</td><td>data on a socket</td></tr>
+						<tr><td>sleep()</td><td>a timer</td></tr>
+						<tr><td>futex()</td><td>a memory address (lock)</td></tr>
+						<tr><td>waitpid()</td><td>a process</td></tr>
+						<tr><td>etc...</td></tr>
+					</table>
+				</section>
+				<section>
+					<h3>Sleeping involuntarily</h3>
+					<pre><code>pkill -STOP mysqld</code></pre>
+				</section>
+				<section>
+					<h3>Process States</h3>
+					<table style="font-size: smaller">
+						<tr><td>RUNNING (R)</td><td>misnomer: runnable process</td></tr>
+						<tr><td>UNINTERRUPTIBLE (D)</td><td>waiting for disk</td></tr>
+						<tr><td>INTERRUPTIBLE (S)</td><td>waiting for something else</td></tr>
+						<tr><td>STOPPED (T)</td><td>(forced to) wait for SIGCONT</td></tr>
+						<tr><td>ZOMBIE (Z)</td><td>waiting for parent to waitpid()</td></tr>
+					</table>
+					<br />
+					See include/linux/sched.h for gory details
+				</section>
+				<section>
+					<h3>Load average</h3>
+					Instantaneous load:<br />
+					<div class="indent">TASK_RUNNING (R) +<br /> TASK_UNINTERRUPTIBLE (D)
+					</div>
+					<ul>
+						<li>sampled every 5 seconds</li>
+						<li>into an exponentially weighted moving average</li>
+					</ul>
+					<div style="font-size: smaller">
+						<br />
+						See:<br />
+						<ul>
+							<li>include/linux/sched.h</li>
+							<li>kernel/sched/loadavg.c</li>
+						</ul>
+					</div>
+				</section>
+				<section>
+					<h3>What's better than a load average?</h3>
+					<ul>
+						<li>for CPU: runqueue latency</li>
+						<li>for disk:
+							<ul>
+								<li>iostat avgqu-sz (per disk)</li>
+								<li>delayacct_blkio_ticks (per task)</li>
+							</ul>
+						</li>
+					</ul>
+					<div class="links">
+						<a href="https://github.com/hashbrowncipher/taskstats_exporter">https://github.com/hashbrowncipher/taskstats_exporter</a>
+					</div>
+				</section>
+				<section>
+					<h3>delayacct_blkio_ticks</h3>
+					How long a process spent in the D state, in hundredths of a second:<br />
+<pre><code>$ awk '{ print $42 / 100 }' < /proc/$PID/stat
+19.68
+</code></pre>
+				</section>
+				<section>
+					<img src="assets/blkio_ticks.png" />
+				</section>
+				<section>
+					<h3>Workload dependence (1)</h3>
+Workload:
+<pre><code>def random_reader():
+    while True:
+        do_random_read()
+
+threaded(random_reader, 500).start()
+</code></pre>
+				<div style="margin-top: 0.5em">
+				Resources:<br />
+					<ul style="font-size: smaller;">
+						<li>&ge;32 cores</li>
+						<li>SSD with maximum performance at QD=16-32</li>
+					</ul>
+				</div>
+				<aside class="notes">
+					load is 500
+					delayacct_blkio_ticks grows at ~500 seconds, per second
+				</aside>
+				</section>
+				<section>
+					<h3>Workload dependence (2)</h3>
+					Compare this workload:
+					<pre><code>def locked_random_reader(semaphore):
+    while True:
+        with semaphore:
+            do_random_read()
+
+max_ios = 32
+semaphore = Semaphore(max_ios)
+threaded(lambda: random_reader(semaphore), 500).start()
+</code></pre>
+					<aside class="notes">
+						delayacct_blkio_ticks grows at ~32 seconds, per second
+						load is ~32
+					</aside>
+				</section>
+				<section>
+					<h3>Workload dependence: Lessons</h3>
+					<ul>
+						<li>Changes in workload will change both bad stats (load) and good ones (delayacct_blkio_ticks)</li>
+						<li>Locks are a form of queueing!</li>
+					</ul>
+				</section>
+				<section>
+					<h2 style="margin-top: 20%">Questions?</h2>
+				</section>
+				</section>
+				<section>
+				<section>
+					<h3>Simplified MySQL example</h3>
+					<ol style="font-size: smaller">
+						<li>Query packet arrives at NIC</li>
+						<li>Kernel adds packet to socket queue; wakes recv()'ing MySQL thread (S → R)</li>
+						<li>Buffer pool lookup: MISS! (waited for locks, R → S → R)</li>
+						<li>Read pages from disk (R → D → R)</li>
+						<li>Big result; send result to client (R → S → R)</li>
+						<li>Wait for client: recv() (R → S)</li>
+						<li>GOTO 1</li>
+						<aside class="notes">
+							Assume 1:1 thread scheduling. No thread pool.
+							We neglected to mention the MySQL Threads_running variable. It was +1
+							We can expect the CPU resource requirement to scale
+						</aside>
+				  </li>
+				</section>
+				<section>
+					<h3>"Simplified" is a key word</h3>
+					<ul>
+						<li>Did packet processing happen due to interrupt, or polling?</li>
+						<li>How hot are the CPU caches</li>
+						<li>Query passed through bunches of MySQL events_stages</li>
+						<li>etc...</li>
+					</ul>
+				</section>
+				<section>
+					<h3 style="font-size: larger">Latency analysis is fractally complex!</h3>
+					CPUs (and everything else) are abstractions that hide complexity:
+					<ul>
+						<li>is it throttling?</li>
+						<li>how many cycles did I stall due to memory access?</li>
+						<li>how many cycles did I stall due to lack of resources in the processor?</li>
+					</ul>
+				</section>
+				<section>
+					<h2>But we do it anyway!</h2>
+					CPU time is still a useful metric, even though we take it with a grain of salt!
+				</section>
+				<section>
+					<h3>Collecting latency information</h3>
+					Two methods:<br />
+					<ol>
+						<li>Timing</li>
+						<li>Sampling (Little's law!)</li>
+				</section>
+				<section>
+					<h3>Collecting timings</h3>
+					T: Accumulator<br />
+					t: current time<br />
+					T<sub></sub> += t<sub>end</sub> - t<sub>start</sub>
+				</section>
+				<section>
+					<h3>Insist on vDSO timekeeping</h3>
+					<ul>
+						<li>vDSO: virtual dynamic shared object</li>
+						<li>vDSO timekeeping takes 25-45ns in a tight loop</li>
+						<li>non-vDSO timekeeping takes ~4x longer</li>
+					</ul>
+					<br /><br />
+					<pre><code>bad  $ strace -qq -e clock_gettime date > /dev/null
+clock_gettime(CLOCK_REALTIME, {946684800, 0}) = 0
+good $ strace -qq -e clock_gettime date > /dev/null</code></pre>
+					<div class="links">
+						<a href="http://www.brendangregg.com/blog/2015-03-03/performance-tuning-linux-instances-on-ec2.html">http://www.brendangregg.com/blog/2015-03-03/performance-tuning-linux-instances-on-ec2.html</a><br />
+						<a href="https://www.slideshare.net/AmazonWebServices/cmp402-amazon-ec2-instances-deep-dive">https://www.slideshare.net/AmazonWebServices/cmp402-amazon-ec2-instances-deep-dive</a>
+					</div>
+				</section>
+				<section>
+					<h3>Little's Law</h3>
+					In a stable system: <span class="red">L = λW</span><br />
+					L (<em>mean</em> dwelling customers)<br />
+					λ (<em>mean</em> arrival rate)<br />
+					W (<em>mean</em> dwell time)<br />
+				</section>
+				<section>
+					<h3>Little's Law applied to MySQL</h3>
+					Over 1 second:
+					<ul>
+						<li>1000 query threads (~Threads_running <em>sampled)</em></li>
+						<li>1e5 Questions (SHOW STATUS LIKE 'Questions')</li>
+					</ul>
+					<p>
+					L / λ = W<br />
+					So: 1000 / (1e5 / sec) = <span class="green">10 ms per query</span>
+					</p>
+					<aside class="notes">
+						Subtract binlog threads, etc. from Threads_running
+						It's valuable to not perturb the system you're measuring (too much)
+					</aside>
+				</section>
+				<section>
+					Over the same period the application records 23 outstanding queries <em>(on average)</em>
+					<p>
+					23 / (1e5 / sec) = <span class="green">23 ms per query</span>
+					</p>
+					<p>
+					23 - 10 = <span class="green">13 ms</span> of unaccounted-for time<br /><em>(on average)</em>
+					</p>
+					<aside class="notes">
+						Little's law is powerful because it operates irrespective of distributions!
+						Little's law operates irrespective of distributions!
+						Make your distributions smaller!
+					</aside>
+				</section>
+				<section class="centered">
+					<h3>Problems abound</h3>
+					We now know an <em>average</em> about our queries <em>in general</em>.
+				</section>
+				<section>
+					<h3>Interlude: why not histograms‽</h3>
+					<p>A useful histogram requires ~16-276 counters</p>
+					<p>An average requires 2 (+1 for variance).</p>
+					<p>We can track more averages than we can ever as histograms.</p>
+					<aside class="notes">
+						Use histograms when tracking SLAs
+						Or when you have the storage oomph to understand the distribution of a complex system!
+						Track averages wherever you like.
+					</aside>
+				</section>
+				<section>
+					<h2 style="margin-top: 20%">Questions?</h2>
+				</section>
+				</section>
+				<section>
+				<section>
+					<h3>A tale of two tenants</h3>
+					Service "fishpics" with N workers and two paths:<br />
+					<ul>
+						<li>cache hit (1 ms)</li>
+						<li>cache miss (100-10000 ms)</li>
+					</ul>
+				</section>
+				<section>
+					<h3>An "answer" to bad averages</h3>
+					<ul>
+						<li>Track cache hit/miss time (mean + variance) separately</li>
+						<li>Track time-in-queue separately from work time</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Multi-tenancy</h3>
+					<ul>
+						<li>if misses get too slow, hits will wait</li>
+						<li>two "tenants", one blocking the other</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Fairness</h3>
+					Queue time is useful, but not in isolation!
+					<ul>
+						<li>If a 100 ms RPC waits 3 ms: no big deal</li>
+						<li>If a 100 µs RPC waits 3 ms: alarm bells!</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Slowdown</h3>
+					<div>
+					<ul>
+						<li>S = (queued time) / (working time)</li>
+						<li>worthwhile whenever a human is waiting</li>
+						<li>cf. express lanes in grocery stores</li>
+						<li>OLTP vs. batch workloads</li>
+						<aside class="notes">
+							Slowdown is a way of managing expectations.
+						</aside>
+					</ul>
+					</div>
+				</section>
+				<section>
+					<table>
+						<tr>
+						<td>
+							<img src="assets/tags.png"><br />
+						</td>
+						<td>
+							<img src="assets/hb-book.png" height="400">
+						</td>
+						</tr>
+					</table>
+				</section>
+				<section>
+					<img src="assets/bookexcerpt.png" style="position: relative; top: -100px">
+				</section>
+				<section>
+					<h3>Concurrency limiting</h3>
+					fishpics service:
+					<ul>
+						<li>limit misses to 90% of workers</li>
+						<li>drop requests above 90%</li>
+						<li>single pool of servers; single deployment</li>
+					</ul>
+					<aside class="notes">
+						Many deployments split their pools to achieve this.
+						It isn't necessary unless you want to
+						And with concurrency limiting, you can update the ratios on the fly
+						And overprovisioning is possible.
+					</aside>
+				</section>
+				<section>
+					<h3>All datastores are multi-tenant!</h3>
+					<ul>
+						<li>query threads compete with each other</li>
+						<li>batching and coalescing work → background work</li>
+						<li>background threads compete with query threads</li>
+						<li>backups are background work</li>
+				</section>
+				<section>
+					<h3>Example: MySQL backups</h3>
+					<ul>
+						<li>Pipeline: read | compress | send</li>
+						<li>read from disk (ionice(1); CFQ IOPRIO_CLASS_IDLE)</li>
+						<li>compress (chrt(1); SCHED_IDLE)</li>
+						<li>send over network (prio qdisc; SOL_PRIORITY)</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Classful scheduling</h3>
+					<ul>
+						<li>work is divided into classes</li>
+						<li>if high-class work exists, low-class work waits</li>
+						<li><span class="mono">nice(1)</span> is NOT classful (timeslices)</li>
+				</section>
+				<section>
+					<h3>Example: Cassandra compaction</h3>
+					Goal: maximal compaction; minimal disruption
+					<ul>
+						<li>don't pick a rate a priori!</li>
+						<li>SCHED_IDLE → possible starvation</li>
+						<li>solution: cpuset</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Heracles</h3>
+					<div style="width: 100%; text-align: center"><img src="assets/heracles.png"></div>
+					<div>
+						<ul>
+							<li>From Google</li>
+							<li>Colocated batch and latency-sensitive tasks</li>
+							<li>Per-resource analysis</li>
+						</ul>
+					</div>
+				</section>
+				<section>
+					<h3>So much more!</h3>
+					<ul>
+						<li>token buckets</li>
+						<li>cgroups</li>
+						<li>qdiscs (codel)</li>
+					</ul>
+				</section>
+				<section>
+					<h2 style="margin-top: 20%">Questions?</h2>
+				</section>
+				</section>
+				<section>
+				<section>
+					<h3>Load balancing</h3>
+					<ul>
+						<li>how are requests allocated to backends?</li>
+						<li>central queue minimizes queued time</li>
+						<li>under unrealistic assumptions</li>
+					</ul>
+					<div class="links">
+						See, in general, ch 24 of "Performance Modeling and Design of Computer Systems"
+					</div>
+				</section>
+				<section>
+					<h3>Bad load balancing</h3>
+					<li>random</li>
+					<li>round-robin (slightly better)</li>
+				</section>
+				<section>
+					<h3>Better load balancing</h3>
+					<li>join-shortest-queue</li>
+					<li>least-work-left</li>
+					<li>TAGS (for "practical" workloads)</li>
+				</section>
+				<section>
+					<h3>TAGS (prepare your mind)</h3>
+					<ul>
+						<li>throws away work!</li>
+						<li>unbalances load!</li>
+						<li>fairness over throughput</li>
+					</ul>
+					<aside class="notes">
+						work conservation, defined
+					</aside>
+				</section>
+				<section>
+					<h3>TAGS (key concepts)</h3>
+					<ul>
+						<li>Non-preemptible idempotent jobs</li>
+						<li>Large variance in job size</li>
+						<li>Unwilling (unable) to make predictions</li>
+						<li>Slowdown metric (covered earlier)</li>
+						<li>Server expansion requirement</li>
+						<aside class="notes">
+							large variance in job size.
+							like tickets (3 orders of magnitude)
+							or db queries
+							or code builds
+						</aside>
+					</ul>
+				</section>
+				<section>
+					<h3>TAGS</h3>
+					<ul>
+						<li>Allow jobs to run a limited amount of time</li>
+						<li>Kill and requeue jobs that run too long</li>
+						<img src="assets/tags_diagram.png">
+				</section>
+				<section id="unbalancing">
+					<h3>Load unbalancing</h3>
+					<img src="assets/tags_unbalancing.png">
+				</section>
+				<section>
+					<h2 style="margin-top: 20%">(Final) Questions?</h2>
+				</section>
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				history: true,
+
+				// More info https://github.com/hakimel/reveal.js#dependencies
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
