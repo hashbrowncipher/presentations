@@ -35,6 +35,11 @@
 			code {
 				color: orange;
 			}
+
+			.reveal pre code {
+				font-size: 1.5em;
+				line-height: 1.1em;
+			}
 		</style>
 		<!-- Theme used for syntax highlighting of code -->
 		<link rel="stylesheet" href="lib/css/zenburn.css">
@@ -85,6 +90,7 @@
 							<!-- This logging framework just isn't for us -->
 							<li>Or we just straight-up make mistakes</li>
 							<li class="fragment">Or our coworkers make mistakes</li>
+							<li class="fragment"><code>git revert</code> can't save me</li>
 						</ul>
 					</section>
 					<section id="coworkers">
@@ -141,6 +147,7 @@
 							<ul>
 								<li>more code to write</li>
 								<li>more code to review</li>
+								<li>my cleanup code might be broken</li>
 								<li>someone has to clean up the cleanup code</li>
 							</ul>
 						</section>
@@ -170,13 +177,15 @@
 					<ol>
 						<li>Use Puppet to specify what should be deployed</li>
 						<li>Allow Puppet to remove anything it doesn't know about</li>
-						<!-- At this point you should be saying "thanks for stating the obvious, Josh" -->
+						<aside class="notes">
+							It may sound obvious, but this is a recurring theme of this talk
+						</aside>
 					</ol>
 				</section>
 				<section id="outline">
 					<h3>What's to come?</h3>
 					<ul>
-						<li>A few easy examples (directory purging, cronjobs, hosts)</li>
+						<li>A few basic examples (directory purging, cronjobs, hosts)</li>
 						<li>A bit of Puppet internals</li>
 						<li>Use Puppet internals to achieve more purging</li>
 					</ul>
@@ -192,6 +201,7 @@
   recurse =&gt; true,
   purge   =&gt; true,
   force   =&gt; true,
+  ...
 }</code></pre>
 					</section>
 					<section id="observability" style="text-align: left">
@@ -215,7 +225,7 @@ $ dpkg -S /etc/cassandra
 						<h3>Example 1: Partial management</h3>
 						<p style="margin-top: 1em"><strong>Situation: </strong>We want to purge <code>/etc/cassandra</code>, but we need to generate the
 						list of seeds outside of Puppet</p>
-<pre><code class="puppet">file { '/etc/cassandra':
+<pre><code class="puppet" style="font-size: 1em">file { '/etc/cassandra':
   ensure  =&gt; directory,
   recurse =&gt; true,
   purge   =&gt; true,
@@ -288,11 +298,11 @@ file { '/etc/cassandra/seeds':
 					</section>
 					<section id="cron-implemented">
 						<p>What this solution ends up looking like: (ish)</p>
-<pre><code class="puppet">file { '/nail/etc/cron.d':
-  ensure =&gt; directory,
-  purge  =&gt; true,
-  force  =&gt; true,
-  limit  =&gt; true,
+<pre><code class="puppet" style="font-size: 1em">file { '/nail/etc/cron.d':
+  ensure  =&gt; directory,
+  purge   =&gt; true,
+  force   =&gt; true,
+  recurse =&gt; true,
  }
 
 file { '/nail/etc/cron.d/myjob':
@@ -342,7 +352,7 @@ host { 'steampunk':
 					</div>
 				</section>
 				<section id="ral-diffs">
-					<p>Puppet diffs resources present on the host with the RAL it constructs</p>
+					<p>Puppet diffs resources in the catalog against the RAL it constructs</p>
 					<p class="fragment">Could we ask it remove resources present in the RAL but not in the catalog?</p>
 					<h3 class="fragment" style="color: green">Yes!</h4>
 				</section>
@@ -521,7 +531,10 @@ Notice: /Stage[main]/Main/Package[libpython2.7-dbg]/ensure: current_value 2.7.12
 						Downside: we do make changes to the autoremover database of auto/manual in noop mode.
 						So we shouldn't go arbitrarily running apt-get autoremove.
 
-						This implementation was deployed at Eat24.
+						This implementation was deployed at Eat24. I ran it in
+						noop mode ahead of time, and identified a bunch of
+						packages that were on our system but not managed by
+						Puppet.
 					</aside>
 				</section>
 				<section id="general-purpose">
@@ -555,7 +568,7 @@ Notice: /Stage[main]/Main/Package[libpython2.7-dbg]/ensure: current_value 2.7.12
 					<p>Q: What does this do?</p>
 <pre><code class="puppet">package { 'mysql-server-5.7': }
 package { 'bash': }</code></pre>
-					<p>A: Creates version drift</p>
+					<p class="fragment">A: Creates version drift</p>
 					<aside class="notes">
 						This pattern is everywhere, and it's awful. If only there was a way to
 						upgrade all packages that don't have a specific version specified.
@@ -575,12 +588,17 @@ package { 'bash': }</code></pre>
 					<ul>
 						<li><code>aptly_purge</code> can set all versioned packages as held by
 							dpkg</li>
+					</ul>
+<pre><code class="puppet">aptly_purge { 'packages':
+  hold =&gt; true,
+}</code></pre>
+					<ul>
 						<li>Upshot: <code>apt-get dist-upgrade</code> and
 						<code>unattended-upgrades</code> will only touch packages without a
 						specific Puppet version specified.</li>
 						<aside class="notes">
 							So be sure to think broadly about what you can achieve by introspecting
-							the Puppet catalog. It's not just purging
+							the Puppet catalog. It's not just purging.
 						</aside>
 					</ul>
 			</section>
@@ -588,7 +606,8 @@ package { 'bash': }</code></pre>
 				<h3>End matter</h3>
 				<p>Please do tell me your stories of Puppet resource purging.</p>
 				<p>Walk up and say hi right now.</p>
-				<p>Or <a href="mailto:josh@code406.com">josh@code406.com</a> works too</p>
+				<p><a href="mailto:josh@code406.com">josh@code406.com</a> works too</p>
+				<p><a href="https://puppetcommunity.slack.com/messages/@josnyder">@josnyder</a> in Puppet Community Slack</p>
 			</section>
 
 		</div>
